@@ -4,18 +4,59 @@ import os
 
 st.set_page_config(page_title="Rifa 10x10")
 
-FILENAME = "rifa.csv"
 TOTAL_COLUMNS = 10
 TOTAL_ROWS = 10
 TOTAL_NUMBERS = TOTAL_COLUMNS * TOTAL_ROWS
+DATA_FOLDER = "rifas"
 
-def load_data():
-    if os.path.exists(FILENAME):
-        df = pd.read_csv(FILENAME)
+os.makedirs(DATA_FOLDER, exist_ok=True)
+
+if "users" not in st.session_state:
+    st.session_state.users = {"admin": "123"}
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+if "username" not in st.session_state:
+    st.session_state.username = ""
+
+def login_page():
+    st.title("🔐 Login / Cadastro")
+    tab1, tab2 = st.tabs(["🔑 Login", "📝 Cadastro"])
+
+    with tab1:
+        username = st.text_input("Usuário")
+        password = st.text_input("Senha", type="password")
+        if st.button("Entrar"):
+            if username in st.session_state.users and st.session_state.users[username] == password:
+                st.session_state.logged_in = True
+                st.session_state.username = username
+                st.success(f"Bem-vindo, {username}!")
+                st.rerun()
+            else:
+                st.error("Usuário ou senha incorretos.")
+
+    with tab2:
+        new_user = st.text_input("Novo usuário")
+        new_pass = st.text_input("Nova senha", type="password")
+        if st.button("Cadastrar"):
+            if new_user in st.session_state.users:
+                st.warning("Este usuário já existe.")
+            elif new_user and new_pass:
+                st.session_state.users[new_user] = new_pass
+                st.success("Usuário cadastrado com sucesso! Faça login.")
+            else:
+                st.error("Preencha todos os campos.")
+
+def user_filename(username):
+    return os.path.join(DATA_FOLDER, f"{username}.csv")
+
+def load_user_data(username):
+    filename = user_filename(username)
+    if os.path.exists(filename):
+        df = pd.read_csv(filename)
         if "winner_number" not in df.columns:
             df["winner_number"] = None
             df["winner_name"] = None
-            df.to_csv(FILENAME, index=False)
+            df.to_csv(filename, index=False)
     else:
         df = pd.DataFrame({
             "number": list(range(1, TOTAL_NUMBERS + 1)),
@@ -23,13 +64,25 @@ def load_data():
             "winner_number": [None] * TOTAL_NUMBERS,
             "winner_name": [None] * TOTAL_NUMBERS
         })
-        df.to_csv(FILENAME, index=False)
+        df.to_csv(filename, index=False)
     return df
 
-def save_data(df):
-    df.to_csv(FILENAME, index=False)
+def save_user_data(username, df):
+    df.to_csv(user_filename(username), index=False)
 
-df = load_data()
+if not st.session_state.logged_in:
+    login_page()
+    st.stop()
+
+username = st.session_state.username
+df = load_user_data(username)
+
+with st.sidebar:
+    st.caption(f"👤 Logado como: `{username}`")
+    if st.button("🚪 Sair"):
+        st.session_state.logged_in = False
+        st.session_state.username = ""
+        st.rerun()
 
 tab1, tab2 = st.tabs(["📋 Tabela de Rifa", "🎲 Sorteio"])
 
@@ -45,7 +98,7 @@ with tab1:
             current_name = df.at[idx, "name"]
             label = f"✅ {num:02d}" if pd.notna(current_name) else f"⬜ {num:02d}"
 
-            if cols[j].button(label, key=f"btn_{idx}"):
+            if cols[j].button(label, key=f"btn_{username}_{idx}"):
                 if not name:
                     st.warning("Digite um nome para marcar ou desmarcar o número.")
                 elif pd.isna(current_name):
@@ -54,7 +107,7 @@ with tab1:
                 else:
                     df.at[idx, "name"] = None
                     st.info(f"Número {num} foi liberado.")
-                save_data(df)
+                save_user_data(username, df)
                 st.rerun()
 
     with st.sidebar:
@@ -84,7 +137,7 @@ with tab2:
                 st.success(f"🏆 Número sorteado: **{winner_num:02d}** — {winner_name}")
                 df.at[0, "winner_number"] = winner_num
                 df.at[0, "winner_name"] = winner_name
-                save_data(df)
+                save_user_data(username, df)
                 st.rerun()
             else:
                 st.warning("Nenhum número foi escolhido ainda para sortear.")
