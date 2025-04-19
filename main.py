@@ -1,23 +1,46 @@
 import streamlit as st
 import pandas as pd
 import os
+import json
+import bcrypt
 
+# Config
 st.set_page_config(page_title="Rifa 10x10")
-
 TOTAL_COLUMNS = 10
 TOTAL_ROWS = 10
 TOTAL_NUMBERS = TOTAL_COLUMNS * TOTAL_ROWS
 DATA_FOLDER = "rifas"
+USERS_FILE = "users.json"
 
+# Criar pasta de rifas se não existir
 os.makedirs(DATA_FOLDER, exist_ok=True)
 
+# Funções de autenticação
+def load_users():
+    if os.path.exists(USERS_FILE):
+        with open(USERS_FILE, "r") as f:
+            return json.load(f)
+    return {}
+
+def save_users(users_dict):
+    with open(USERS_FILE, "w") as f:
+        json.dump(users_dict, f)
+
+def hash_password(password):
+    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+
+def verify_password(password, hashed):
+    return bcrypt.checkpw(password.encode(), hashed.encode())
+
+# Session init
 if "users" not in st.session_state:
-    st.session_state.users = {"admin": "123"}
+    st.session_state.users = load_users()
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 if "username" not in st.session_state:
     st.session_state.username = ""
 
+# Página de Login e Cadastro
 def login_page():
     st.title("🔐 Login / Cadastro")
     tab1, tab2 = st.tabs(["🔑 Login", "📝 Cadastro"])
@@ -26,7 +49,8 @@ def login_page():
         username = st.text_input("Usuário")
         password = st.text_input("Senha", type="password")
         if st.button("Entrar"):
-            if username in st.session_state.users and st.session_state.users[username] == password:
+            users = st.session_state.users
+            if username in users and verify_password(password, users[username]):
                 st.session_state.logged_in = True
                 st.session_state.username = username
                 st.success(f"Bem-vindo, {username}!")
@@ -41,11 +65,14 @@ def login_page():
             if new_user in st.session_state.users:
                 st.warning("Este usuário já existe.")
             elif new_user and new_pass:
-                st.session_state.users[new_user] = new_pass
+                hashed = hash_password(new_pass)
+                st.session_state.users[new_user] = hashed
+                save_users(st.session_state.users)
                 st.success("Usuário cadastrado com sucesso! Faça login.")
             else:
                 st.error("Preencha todos os campos.")
 
+# Funções de dados por usuário
 def user_filename(username):
     return os.path.join(DATA_FOLDER, f"{username}.csv")
 
@@ -70,6 +97,7 @@ def load_user_data(username):
 def save_user_data(username, df):
     df.to_csv(user_filename(username), index=False)
 
+# Proteção por login
 if not st.session_state.logged_in:
     login_page()
     st.stop()
@@ -77,6 +105,7 @@ if not st.session_state.logged_in:
 username = st.session_state.username
 df = load_user_data(username)
 
+# Sidebar - logout
 with st.sidebar:
     st.caption(f"👤 Logado como: `{username}`")
     if st.button("🚪 Sair"):
@@ -84,6 +113,7 @@ with st.sidebar:
         st.session_state.username = ""
         st.rerun()
 
+# Tabs
 tab1, tab2 = st.tabs(["📋 Tabela de Rifa", "🎲 Sorteio"])
 
 with tab1:
